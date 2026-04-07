@@ -7,9 +7,7 @@ function CreateMetaLicense(src)
     local metadataDriverLicense = {}
     local metadataIdCard = {}
     if CoreName == "qb-core" or CoreName == "qbx_core" then
-        local cMonth = os.date('%m'):match("0*(%d+)")
-        local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-        local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
         if Config.CardTypes["idcard"].useMetadata then
             metadataIdCard = {
                 firstName = string.upper(Player.PlayerData.charinfo.firstname),
@@ -65,9 +63,7 @@ function CreateMetaLicense(src)
             }
         end
     elseif CoreName == "es_extended" then
-        local cMonth = os.date('%m'):match("0*(%d+)")
-        local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-        local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
         if Config.CardTypes["idcard"].useMetadata then
             metadataIdCard = {
                 firstName = string.upper(Player.variables.firstName),
@@ -131,30 +127,80 @@ function GetStringSex(sexString)
     return sexString == 1 and Lang:t("general.female") or Lang:t("general.male")
 end
 
+local function GetIssueAndExpiryDate()
+    local cMonth = os.date('%m'):match('0*(%d+)')
+    local monthName = Config.Months[tonumber(cMonth)]
+    local day = os.date('%d')
+    local currentYear = tonumber(os.date('%Y'))
+    local issueDate = monthName .. ' ' .. day .. ', ' .. currentYear
+    local expiredDate = monthName .. ' ' .. day .. ', ' .. (currentYear + 1)
+    return issueDate, expiredDate
+end
+
+local function GetCityHallItemConfig(itemName)
+    for _, cityHallItem in pairs(Config.CityHall.Items or {}) do
+        if cityHallItem.name == itemName then
+            return cityHallItem
+        end
+    end
+    return nil
+end
+
+local function GetAvailablePaymentType(src, amount)
+    amount = tonumber(amount) or 0
+    if amount <= 0 then
+        return 'cash'
+    end
+
+    if GetPlayerMoney(src, 'cash') >= amount then
+        return 'cash'
+    end
+
+    if GetPlayerMoney(src, 'bank') >= amount then
+        return 'bank'
+    end
+
+    return nil
+end
+
 RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id, weaponName, className)
     local itemAmount = 1
     local src = id or source
     local Player = GetPlayer(src)
-    local paymentType = nil
-    local playerCash = GetPlayerMoney(src, "cash")
-    if playerCash >= price then
-        paymentType = "cash"
-    else
-        return Notify(src, Lang:t("notify.not_enough_money"), 7500, "error")
+    if not Player then
+        return
     end
-    local playerBank = GetPlayerMoney(src, "bank")
-    if playerBank >= price then
-        paymentType = "bank"
-    else
-        return Notify(src, Lang:t("notify.not_enough_money"), 7500, "error")
+
+    if not Config.CardTypes[item] then
+        return Notify(src, Lang:t('notify.card_type_invalid', {type = tostring(item)}), 7500, 'error')
     end
-    Notify(src, Lang:t("notify.bought", {item = item, amount = itemAmount}), 7500, "success")
+
+    local cityHallItem = GetCityHallItemConfig(item)
+    local expectedPrice = cityHallItem and tonumber(cityHallItem.price) or 0
+    local requestedPrice = tonumber(price) or expectedPrice
+
+    if id == nil and cityHallItem then
+        local playerData = Player.PlayerData or {}
+        local playerJob = playerData.job and playerData.job.name
+        if cityHallItem.job and cityHallItem.job ~= playerJob then
+            return Notify(src, Lang:t('notify.card_type_invalid', {type = tostring(item)}), 7500, 'error')
+        end
+
+        if requestedPrice ~= expectedPrice then
+            return Notify(src, Lang:t('notify.card_type_invalid', {type = tostring(item)}), 7500, 'error')
+        end
+    end
+
+    local paymentType = GetAvailablePaymentType(src, requestedPrice)
+    if not paymentType then
+        return Notify(src, Lang:t('notify.not_enough_money'), 7500, 'error')
+    end
+
+    Notify(src, Lang:t('notify.bought', {item = item, amount = itemAmount}), 7500, 'success')
     local metadata = {}
     if Config.CardTypes[item]["itemName"] == Config.CardTypes["idcard"]["itemName"] then
         if CoreName == "qb-core" or CoreName == "qbx_core" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             if Config.CardTypes["idcard"].useMetadata then
                 metadata = {
                     firstName = string.upper(Player.PlayerData.charinfo.firstname),
@@ -183,9 +229,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
                 }
             end
         elseif CoreName == "es_extended" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             if Config.CardTypes["idcard"].useMetadata then
                 metadata = {
                     firstName = string.upper(Player.variables.firstName),
@@ -216,9 +260,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
         end
     elseif Config.CardTypes[item]["itemName"] == Config.CardTypes["driverlicense"]["itemName"] then
         if CoreName == "qb-core" or CoreName == "qbx_core" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             if Config.CardTypes["driverlicense"].useMetadata then
                 metadata = {
                     firstName = string.upper(Player.PlayerData.charinfo.firstname),
@@ -247,9 +289,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
                 }
             end
         elseif CoreName == "es_extended" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             if Config.CardTypes["driverlicense"].useMetadata then
                 metadata = {
                     firstName = string.upper(Player.variables.firstName),
@@ -280,9 +320,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
         end
     elseif Config.CardTypes[item]["itemName"] == Config.CardTypes["lspdbadge"]["itemName"] or Config.CardTypes[item]["itemName"] == Config.CardTypes["lsmsbadge"]["itemName"] then
         if CoreName == "qb-core" or CoreName == "qbx_core" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.PlayerData.charinfo.firstname),
                 lastName = string.upper(Player.PlayerData.charinfo.lastname),
@@ -296,9 +334,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
                 type = item
             }
         elseif CoreName == "es_extended" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.variables.firstName),
                 lastName = string.upper(Player.variables.lastName),
@@ -313,7 +349,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
             }
         end
     elseif Config.CardTypes[item]["itemName"] == Config.CardTypes["weaponlicense"]["itemName"] then
-        if not weaponName and not className then
+        if not weaponName or not className then
             return Notify(src, Lang:t("notify.cannot_be_left_empty"), 7500, "error")
         end
         local type = "weaponlicense"
@@ -324,9 +360,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
                 licenseTable[type] = true
                 Player.Functions.SetMetaData('licences', licenseTable)
             end
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+            local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.PlayerData.charinfo.firstname),
                 lastName = string.upper(Player.PlayerData.charinfo.lastname),
@@ -340,9 +374,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
                 type = type
             }
         elseif CoreName == "es_extended" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.variables.firstName),
                 lastName = string.upper(Player.variables.lastName),
@@ -357,7 +389,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
             }
         end
     elseif Config.CardTypes[item]["itemName"] == Config.CardTypes["huntinglicense"]["itemName"] then
-        if not weaponName and not className then
+        if not weaponName or not className then
             return Notify(src, Lang:t("notify.cannot_be_left_empty"), 7500, "error")
         end
         local type = "huntinglicense"
@@ -368,9 +400,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
                 licenseTable["hunterlicense"] = true
                 Player.Functions.SetMetaData('licences', licenseTable)
             end
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+            local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.PlayerData.charinfo.firstname),
                 lastName = string.upper(Player.PlayerData.charinfo.lastname),
@@ -384,9 +414,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
                 type = type
             }
         elseif CoreName == "es_extended" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.variables.firstName),
                 lastName = string.upper(Player.variables.lastName),
@@ -402,7 +430,7 @@ RegisterNetEvent('exter-documents:buyIDCard', function(item, price, pedImage, id
         end
     end
     Citizen.Wait(500)
-    RemoveMoney(src, paymentType, price)
+    RemoveMoney(src, paymentType, requestedPrice)
     AddItem(src, Config.CardTypes[item].itemName, itemAmount, metadata, item)
 end)
 
@@ -467,9 +495,7 @@ RegisterNetEvent('exter-documents:showMyIdCardTo:server', function(type, id)
     local metadata = {}
     if type == "idcard" then
         if CoreName == "qb-core" or CoreName == "qbx_core" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.PlayerData.charinfo.firstname),
                 lastName = string.upper(Player.PlayerData.charinfo.lastname),
@@ -484,9 +510,7 @@ RegisterNetEvent('exter-documents:showMyIdCardTo:server', function(type, id)
             }
             return TriggerClientEvent('exter-documents:showIdCard:client', src, metadata, true)
         elseif CoreName == "es_extended" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.variables.firstName),
                 lastName = string.upper(Player.variables.lastName),
@@ -503,9 +527,7 @@ RegisterNetEvent('exter-documents:showMyIdCardTo:server', function(type, id)
         end
     elseif type == "driverlicense" then
         if CoreName == "qb-core" or CoreName == "qbx_core" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.PlayerData.charinfo.firstname),
                 lastName = string.upper(Player.PlayerData.charinfo.lastname),
@@ -520,9 +542,7 @@ RegisterNetEvent('exter-documents:showMyIdCardTo:server', function(type, id)
             }
             return TriggerClientEvent('exter-documents:showIdCard:client', src, metadata, true)
         elseif CoreName == "es_extended" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.variables.firstName),
                 lastName = string.upper(Player.variables.lastName),
@@ -539,9 +559,7 @@ RegisterNetEvent('exter-documents:showMyIdCardTo:server', function(type, id)
         end
     elseif type == "lspdbadge" or type == "lsmsbadge" then
         if CoreName == "qb-core" or CoreName == "qbx_core" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.PlayerData.charinfo.firstname),
                 lastName = string.upper(Player.PlayerData.charinfo.lastname),
@@ -556,9 +574,7 @@ RegisterNetEvent('exter-documents:showMyIdCardTo:server', function(type, id)
             }
             return TriggerClientEvent('exter-documents:showIdCard:client', src, metadata, true)
         elseif CoreName == "es_extended" then
-            local cMonth = os.date('%m'):match("0*(%d+)")
-            local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-            local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
             metadata = {
                 firstName = string.upper(Player.variables.firstName),
                 lastName = string.upper(Player.variables.lastName),
@@ -610,9 +626,7 @@ RegisterNetEvent('exter-documents:createWeaponLicense:server', function(data)
             end
             targetPlayer.Functions.SetMetaData('licences', licenseTable)
         end
-        local cMonth = os.date('%m'):match("0*(%d+)")
-        local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-        local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+            local issueDate, expiredDate = GetIssueAndExpiryDate()
         metadata = {
             firstName = string.upper(targetPlayer.PlayerData.charinfo.firstname),
             lastName = string.upper(targetPlayer.PlayerData.charinfo.lastname),
@@ -626,9 +640,7 @@ RegisterNetEvent('exter-documents:createWeaponLicense:server', function(data)
             type = type
         }
     elseif CoreName == "es_extended" then
-        local cMonth = os.date('%m'):match("0*(%d+)")
-        local issueDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y')
-        local expiredDate = Config.Months[tonumber(cMonth)] .. " " .. os.date('%d') .. ", " .. os.date('%Y') + 1
+        local issueDate, expiredDate = GetIssueAndExpiryDate()
         metadata = {
             firstName = string.upper(targetPlayer.variables.firstName),
             lastName = string.upper(targetPlayer.variables.lastName),
