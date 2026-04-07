@@ -1,7 +1,22 @@
 local id = 0
 local current = nil
-menuActive = false
+local currentProp = nil
+local menuActive = false
 local alreadyShowing = false
+local closestPed = {}
+local showTextUI = false
+local function BuildUiTranslations()
+    local translations = {}
+    local phrases = Lang.fallback and Lang.fallback.phrases or Lang.phrases
+
+    for k in pairs(phrases) do
+        if k:sub(1, 3) == 'ui.' then
+            translations[k:sub(4)] = Lang:t(k)
+        end
+    end
+
+    return translations
+end
 RegisterNetEvent('exter-documents:showIdCard:client', function(metadata, myself)
     if metadata.firstName == nil then 
         return 
@@ -11,16 +26,13 @@ RegisterNetEvent('exter-documents:showIdCard:client', function(metadata, myself)
     else
         id = id + 1
         metadata.id = id
-        local translations = {}
-        for k in pairs(Lang.fallback and Lang.fallback.phrases or Lang.phrases) do
-            if k:sub(0, ('ui.'):len()) then
-                translations[k:sub(('ui.'):len() + 1)] = Lang:t(k)
-            end
-        end
+        local translations = BuildUiTranslations()
         SendNUIMessage({action = "openIdCard", metadata = metadata, id = id, translations = translations})
-        local model = nil
         if current then
-            DeleteEntity(prop)
+            if currentProp and DoesEntityExist(currentProp) then
+                DeleteEntity(currentProp)
+                currentProp = nil
+            end
             ClearPedTasks(PlayerPedId())
         end
         current = metadata.type
@@ -40,8 +52,8 @@ RegisterNetEvent('exter-documents:showIdCard:client', function(metadata, myself)
             TaskPlayAnim(PlayerPedId(), "paper_1_rcm_alt1-8", "player_one_dual-8", 5.0, 5.0, -1, 51, 0, false, false, false)
             LoadModel(GetHashKey(model))
             local x, y, z = table.unpack(GetEntityCoords(PlayerPedId()))
-            prop = CreateObject(GetHashKey(model), x, y, z + 0.2, true, true, true)
-            AttachEntityToEntity(prop, PlayerPedId(), GetPedBoneIndex(PlayerPedId(), 57005), 0.1000, 0.0200, -0.0300, -90.000, 270.000, 78.999, true, true, false, true, 1, true)
+            currentProp = CreateObject(GetHashKey(model), x, y, z + 0.2, true, true, true)
+            AttachEntityToEntity(currentProp, PlayerPedId(), GetPedBoneIndex(PlayerPedId(), 57005), 0.1000, 0.0200, -0.0300, -90.000, 270.000, 78.999, true, true, false, true, 1, true)
             local closestPlayer, closestDistance = getClosestPlayer(GetEntityCoords(PlayerPedId()))
             if closestPlayer ~= -1 then
                 if closestDistance <= 3.0 then
@@ -52,7 +64,10 @@ RegisterNetEvent('exter-documents:showIdCard:client', function(metadata, myself)
             end
         end
         Citizen.SetTimeout(10000, function()
-            DeleteEntity(prop)
+            if currentProp and DoesEntityExist(currentProp) then
+                DeleteEntity(currentProp)
+                currentProp = nil
+            end
             ClearPedTasks(PlayerPedId())
             alreadyShowing = false
         end)
@@ -62,12 +77,7 @@ end)
 RegisterNetEvent('exter-documents:showIdCard:clientother', function(metadata, myself)
     id = id + 1
     metadata.id = id
-    local translations = {}
-    for k in pairs(Lang.fallback and Lang.fallback.phrases or Lang.phrases) do
-        if k:sub(0, ('ui.'):len()) then
-            translations[k:sub(('ui.'):len() + 1)] = Lang:t(k)
-        end
-    end
+    local translations = BuildUiTranslations()
     SendNUIMessage({action = "openIdCard", metadata = metadata, id = id, translations = translations})
 end)
 
@@ -204,14 +214,12 @@ function ShowFloatingHelpNotification(msg, coords)
     EndTextCommandDisplayHelp(2, false, false, -1)
 end
 
-closestPed = {}
-local showTextUI = false
 Citizen.CreateThread(function()
 	while true do
 		local sleep = 100
 		if not menuActive then
-			playerPed = PlayerPedId()
-			playerCoords = GetEntityCoords(playerPed)
+			local playerPed = PlayerPedId()
+			local playerCoords = GetEntityCoords(playerPed)
 			if not closestPed.id then
                 if Config.CityHall.Interaction.DrawText.Enable then
                     local dist = #(playerCoords - vector3(Config.CityHall.Ped.coords.x, Config.CityHall.Ped.coords.y, Config.CityHall.Ped.coords.z))
@@ -229,8 +237,8 @@ Citizen.CreateThread(function()
 			end
 			if closestPed.id then
 				while true do
-                    playerPed = PlayerPedId()
-					playerCoords = GetEntityCoords(playerPed)
+                    local playerPed = PlayerPedId()
+					local playerCoords = GetEntityCoords(playerPed)
 					closestPed.distance = #(vector3(closestPed.data.coords.x, closestPed.data.coords.y, closestPed.data.coords.z) - playerCoords)
 					if closestPed.distance < closestPed.maxDist then
 						if IsControlJustReleased(0, 38) then
@@ -265,12 +273,7 @@ function openCityHall()
             end
         end
     end
-    local translations = {}
-    for k in pairs(Lang.fallback and Lang.fallback.phrases or Lang.phrases) do
-        if k:sub(0, ('ui.'):len()) then
-            translations[k:sub(('ui.'):len() + 1)] = Lang:t(k)
-        end
-    end
+    local translations = BuildUiTranslations()
     SendNUIMessage({action = "openCityHall", items = items, label = Config.CityHall.MenuLabel, enabledJob = enableJob, translations = translations})
     SetNuiFocus(true, true)
     menuActive = true
@@ -297,7 +300,7 @@ RegisterNUICallback('callback', function(data)
         RenderScriptCams(false, true, 1000, true, false)
         DestroyCam(cam, false)
     elseif data.action == "buy" then
-        pedImage = "default"
+        local pedImage = "default"
         if Config.CardTypes[data.item].usePedImage then
             pedImage = GetMugShotBase64(PlayerPedId(), true)
         end
@@ -660,8 +663,8 @@ Citizen.CreateThread(function()
 	while true do
 		local sleep = 100
 		if not menuActive then
-			playerPed = PlayerPedId()
-			playerCoords = GetEntityCoords(playerPed)
+			local playerPed = PlayerPedId()
+			local playerCoords = GetEntityCoords(playerPed)
 			if not closestLicenseArea.id then
                 for k, v in pairs(Config.LicenseAreas) do
                     if v.Interaction.DrawText.Enable then
@@ -686,8 +689,8 @@ Citizen.CreateThread(function()
 			end
 			if closestLicenseArea.id then
 				while true do
-                    playerPed = PlayerPedId()
-					playerCoords = GetEntityCoords(playerPed)
+                    local playerPed = PlayerPedId()
+					local playerCoords = GetEntityCoords(playerPed)
 					closestLicenseArea.distance = #(vector3(closestLicenseArea.data.coords.x, closestLicenseArea.data.coords.y, closestLicenseArea.data.coords.z) - playerCoords)
 					if closestLicenseArea.distance < closestLicenseArea.maxDist then
 						if IsControlJustReleased(0, 38) then
